@@ -154,6 +154,11 @@ fun DeviceInfoScreen(
         ${Build.DISPLAY}
         ${Build.ID}
         ${Build.VERSION.SECURITY_PATCH}
+        ${Build.VERSION.RELEASE}
+        ${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Build.VERSION.RELEASE_OR_CODENAME else "Unknown"}
+        ${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Build.VERSION.RELEASE_OR_PREVIEW_DISPLAY else "Unknown"}
+        ${Build.VERSION.INCREMENTAL}
+        ${Build.VERSION.SDK_INT}
     """
     val osVersion = System.getProperty("os.version")
 
