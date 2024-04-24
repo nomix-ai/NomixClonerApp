@@ -1,8 +1,15 @@
-**NomixClonerApp** is used to verify the New Identity creation in [NomixCloner](https://nomixcloner.com). In this repo you will find the sources and the Android apks of this app (see the [releases](https://github.com/nomix-ai/NomixClonerApp/releases) section).
+**NomixClonerApp** is used to verify the New Identity creation in [NomixCloner](https://nomixcloner.com). The service clones apps, giving them new package names and replacing device identifiers. You can verify how it works with the help of this app. The app basically obtains device identifiers and shows them on the screen. After cloning it will show fake data from the New Identity instead. The same algorithm works for all apps in NomixCloner.
 
-<img src="https://github.com/nomix-ai/NomixClonerApp/assets/22825859/d71acc68-93f8-487e-9393-425d6c283384" width="344" height ="766" /><br /><br />
+Steps to verify:
+1. Open NomixCloner Telegram bot: [https://t.me/nomixcloner_bot](https://t.me/nomixcloner_bot)
+2. Create a clone of **com.nomixcloner.app**
+3. Install and compare with the original app (see the [releases](https://github.com/nomix-ai/NomixClonerApp/releases) section)
 
-"Identity" of the device includes the following parameters for Android 10+:
+You will see that instead of real device identifiers the clone shows generated data.
+
+<img width="1024" src="https://github.com/nomix-ai/NomixClonerApp/assets/22825859/55dba75e-1f0d-4e97-ad2f-6c64e780610c" /><br /><br />
+
+"New Identities" of clones include the following parameters:
 ```
 - Android ID
 - DNS servers
@@ -13,4 +20,4 @@
 - Location
 ```
 
-The app originally shows the real identity of the device. After cloning it should show the new identity provided by the NomixCloner service. Same algorithm is applied for all apps NomixCloner works with.
+Read more in the [blog post](https://nomixcloner.com/tpost/tdx61p43p1-new-identity-explained).
