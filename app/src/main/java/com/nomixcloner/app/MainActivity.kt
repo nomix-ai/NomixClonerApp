@@ -1,10 +1,8 @@
 package com.nomixcloner.app
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.pm.PackageManager
-import android.location.Location
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.os.Build
 import android.os.Bundle
@@ -33,15 +31,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.ads.identifier.AdvertisingIdClient
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
-import com.google.android.gms.tasks.Task
 import com.nomixcloner.app.ui.theme.NomixClonerAppTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "MainActivity"
 
@@ -50,27 +49,50 @@ class MainActivity : ComponentActivity() {
     private var googleAdId: String by mutableStateOf("")
     private var simInfo: String by mutableStateOf("")
     private var locationInfo: String by mutableStateOf("")
+    private lateinit var permissionsHelper: PermissionsHelper
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        permissionsHelper = PermissionsHelper(this)
         getGoogleAdvertisingId(this)
         setContent {
             NomixClonerAppTheme {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    DeviceInfoScreen(this, googleAdId, ::requestSimInfo, simInfo, ::requestLocationInfo, locationInfo)
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    DeviceInfoScreen(
+                        this,
+                        googleAdId,
+                        ::requestSimInfo,
+                        simInfo,
+                        ::requestLocationInfo,
+                        locationInfo,
+                        { permissionsHelper.requestMediaPermissions() }
+                    )
                 }
             }
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
-        if (requestCode == 1 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == PermissionsHelper.READ_PHONE_STATE_PERMISSION_REQUEST_CODE && permissionsHelper.isGranted(
+                grantResults
+            )
+        ) {
             requestSimInfo()
         }
 
-        if (requestCode == 2 && grantResults.size >= 2 && grantResults[0] == PackageManager.PERMISSION_GRANTED && grantResults[1] == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == PermissionsHelper.LOCATION_PERMISSION_REQUEST_CODE && permissionsHelper.isGranted(
+                grantResults
+            )
+        ) {
             requestLocationInfo()
         }
     }
@@ -88,11 +110,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestSimInfo() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_PHONE_STATE), 1)
+        if (!permissionsHelper.isReadPhoneStatePermissionGranted()) {
+            permissionsHelper.requestReadPhoneStatePermission()
         } else {
             simInfo = try {
-                val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+                val telephonyManager =
+                    getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
                 "${telephonyManager.simOperatorName}, ${telephonyManager.simCountryIso}"
             } catch (e: Exception) {
                 Log.e(TAG, "Error", e)
@@ -102,20 +125,37 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestLocationInfo() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-            || ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION), 2)
+        if (!permissionsHelper.isLocationPermissionGranted()) {
+            permissionsHelper.requestLocationPermission()
         } else {
             try {
-                val fusedLocationClient: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this)
-                val locationResult: Task<Location> = fusedLocationClient.lastLocation
-                locationResult.addOnCompleteListener { task ->
-                    locationInfo = if (task.isSuccessful && task.result != null) {
-                        val location: Location = task.result!!
-                        "lat ${location.latitude}, long ${location.longitude}"
-                    } else {
-                        "Unknown"
+                val fusedLocationClient: FusedLocationProviderClient =
+                    LocationServices.getFusedLocationProviderClient(this)
+                val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+
+                val result = StringBuilder()
+                val locationHelper = LocationHelper()
+
+                val isLoading = AtomicBoolean(true)
+                GlobalScope.launch(Dispatchers.Unconfined) {
+                    val indicator = "◢◣◤◥"
+                    var index = 0
+                    while(isLoading.get()) {
+                        locationInfo = "Loading... " + indicator[index++ % indicator.length].toString()
+                        delay(200)
                     }
+                }
+
+                GlobalScope.launch(Dispatchers.IO) {
+                    result.append(locationHelper.requestNativeCurrentLocation(locationManager, this@MainActivity))
+                    result.append(locationHelper.requestNativeLastLocation(locationManager))
+
+                    result.append(locationHelper.requestLastLocation(fusedLocationClient))
+                    result.append(locationHelper.requestLastLocationBound(fusedLocationClient))
+                    result.append(locationHelper.requestCurrentLocation(fusedLocationClient))
+                    result.append(locationHelper.requestCurrentLocationBound(fusedLocationClient))
+                    isLoading.set(false)
+                    locationInfo = result.toString()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error", e)
@@ -134,6 +174,7 @@ fun DeviceInfoScreen(
     simInfo: String,
     requestLocationInfo: () -> Unit,
     locationInfo: String,
+    requestMediaPermissions: () -> Unit,
 ) {
     val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
     val dnsServers = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -184,14 +225,18 @@ fun DeviceInfoScreen(
             Button(onClick = requestLocationInfo) {
                 Text("LOCATION")
             }
-            Text("Current location: $locationInfo")
+            Text(locationInfo)
+            Button(onClick = requestMediaPermissions) {
+                Text("MEDIA")
+            }
         }
     }
 }
 
 @RequiresApi(Build.VERSION_CODES.Q)
 fun getDnsServers(context: Context): String {
-    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val connectivityManager =
+        context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     val linkProperties = connectivityManager.getLinkProperties(connectivityManager.activeNetwork)
     return linkProperties
         ?.dnsServers
@@ -204,6 +249,6 @@ fun getDnsServers(context: Context): String {
 @Composable
 fun DeviceInfoPreview() {
     NomixClonerAppTheme {
-        DeviceInfoScreen(LocalContext.current, "", {}, "",  {}, "")
+        DeviceInfoScreen(LocalContext.current, "", {}, "", {}, "", {})
     }
 }
