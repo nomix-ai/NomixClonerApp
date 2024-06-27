@@ -35,6 +35,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.ads.identifier.AdvertisingIdClient
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
+import com.nomixcloner.app.ui.WebViewScreen
 import com.nomixcloner.app.ui.theme.NomixClonerAppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -61,15 +62,19 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    DeviceInfoScreen(
-                        this,
-                        googleAdId,
-                        ::requestSimInfo,
-                        simInfo,
-                        ::requestLocationInfo,
-                        locationInfo,
-                        { permissionsHelper.requestMediaPermissions() }
-                    )
+                    if (BuildConfig.webViewMode) {
+                        WebViewScreen(url = "https://nomixcloner.com")
+                    } else {
+                        DeviceInfoScreen(
+                            this,
+                            googleAdId,
+                            ::requestSimInfo,
+                            simInfo,
+                            ::requestLocationInfo,
+                            locationInfo,
+                            { permissionsHelper.requestMediaPermissions() }
+                        )
+                    }
                 }
             }
         }

@@ -45,6 +45,19 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
     }
+
+    flavorDimensions += "mode"
+    productFlavors {
+        create("default") {
+            dimension = "mode"
+            buildConfigField("boolean", "webViewMode", "false")
+        }
+        create("onibox") {
+            dimension = "mode"
+            buildConfigField("boolean", "webViewMode", "true")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
@@ -53,6 +66,7 @@ android {
         jvmTarget = "1.8"
     }
     buildFeatures {
+        buildConfig = true
         compose = true
     }
     composeOptions {
