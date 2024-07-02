@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.telephony.TelephonyManager
 import android.util.Log
+import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.RequiresApi
@@ -25,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -209,6 +211,9 @@ fun DeviceInfoScreen(
     val osVersion = System.getProperty("os.version")
 
     val scrollState = rememberScrollState()
+    val webView = remember { WebView(context) }
+    val userAgent = remember { mutableStateOf(webView.settings.userAgentString) }
+    var showWebView by remember { mutableStateOf(false) }
 
     Box {
         Column(
@@ -234,6 +239,21 @@ fun DeviceInfoScreen(
             Button(onClick = requestMediaPermissions) {
                 Text("MEDIA")
             }
+            Text(fontWeight = FontWeight.Bold, text = "\n/* --- WEB VIEW --- */\n")
+            Text("User Agent: ${userAgent.value}\n")
+            Button(onClick = { showWebView = true }) {
+                Text("OPEN WEB VIEW")
+            }
+        }
+
+        if (showWebView) {
+            WebViewScreen(
+                "https://www.whatismybrowser.com/detect/what-is-my-user-agent/",
+                showTopBar = true,
+                onClose = {
+                    showWebView = false
+                }
+            )
         }
     }
 }
