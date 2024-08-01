@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.telephony.TelephonyManager
 import android.util.Log
+import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -43,7 +44,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.net.HttpURLConnection
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.URI
+import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
+
 
 private const val TAG = "MainActivity"
 
@@ -52,12 +61,18 @@ class MainActivity : ComponentActivity() {
     private var googleAdId: String by mutableStateOf("")
     private var simInfo: String by mutableStateOf("")
     private var locationInfo: String by mutableStateOf("")
+    private var ipInfo: String by mutableStateOf("")
+    private var ipInfoOkHttp: String by mutableStateOf("")
+    private var proxyType: Proxy.Type by mutableStateOf(Proxy.Type.DIRECT)
     private lateinit var permissionsHelper: PermissionsHelper
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         permissionsHelper = PermissionsHelper(this)
         getGoogleAdvertisingId(this)
+        getProxyType()
+
         setContent {
             NomixClonerAppTheme {
                 Surface(
@@ -74,7 +89,12 @@ class MainActivity : ComponentActivity() {
                             simInfo,
                             ::requestLocationInfo,
                             locationInfo,
-                            { permissionsHelper.requestMediaPermissions() }
+                            { permissionsHelper.requestMediaPermissions() },
+                            ::requestIpInfo,
+                            ipInfo,
+                            ::requestIpInfoOkHttp,
+                            ipInfoOkHttp,
+                            proxyType
                         )
                     }
                 }
@@ -147,14 +167,20 @@ class MainActivity : ComponentActivity() {
                 GlobalScope.launch(Dispatchers.Unconfined) {
                     val indicator = "◢◣◤◥"
                     var index = 0
-                    while(isLoading.get()) {
-                        locationInfo = "Loading... " + indicator[index++ % indicator.length].toString()
+                    while (isLoading.get()) {
+                        locationInfo =
+                            "Loading... " + indicator[index++ % indicator.length].toString()
                         delay(200)
                     }
                 }
 
                 GlobalScope.launch(Dispatchers.IO) {
-                    result.append(locationHelper.requestNativeCurrentLocation(locationManager, this@MainActivity))
+                    result.append(
+                        locationHelper.requestNativeCurrentLocation(
+                            locationManager,
+                            this@MainActivity
+                        )
+                    )
                     result.append(locationHelper.requestNativeLastLocation(locationManager))
 
                     result.append(locationHelper.requestLastLocation(fusedLocationClient))
@@ -170,6 +196,51 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun requestIpInfo() {
+        GlobalScope.launch(Dispatchers.IO) {
+            val url = URL("https://ipinfo.io/json")
+            val connection = url.openConnection() as HttpURLConnection
+
+            ipInfo = try {
+                connection.requestMethod = "GET"
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } finally {
+                connection.disconnect()
+            }
+        }
+    }
+
+    private fun requestIpInfoOkHttp() {
+        GlobalScope.launch(Dispatchers.IO) {
+            val client = OkHttpClient.Builder()
+                .build()
+            val request = Request.Builder()
+                .url("https://ipinfo.io/json")
+                .build()
+
+            try {
+                client.newCall(request).execute().use { response ->
+                    ipInfoOkHttp = if (response.isSuccessful) {
+                        response.body?.string().orEmpty()
+                    } else {
+                        ""
+                    }
+                }
+            } finally {
+
+            }
+        }
+    }
+
+    private fun getProxyType() {
+        val proxyList = ProxySelector.getDefault().select(URI.create("https://google.com"))
+        proxyType = if (proxyList.isNotEmpty() && proxyList[0].type() != Proxy.Type.DIRECT) {
+            proxyList[0].type()
+        } else {
+            Proxy.Type.DIRECT
+        }
+    }
 }
 
 @SuppressLint("HardwareIds")
@@ -182,6 +253,11 @@ fun DeviceInfoScreen(
     requestLocationInfo: () -> Unit,
     locationInfo: String,
     requestMediaPermissions: () -> Unit,
+    requestIp: () -> Unit,
+    ipInfo: String,
+    requestIpOkHttp: () -> Unit,
+    ipInfoOkHttp: String,
+    proxyType: Proxy.Type
 ) {
     val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
     val dnsServers = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -213,6 +289,7 @@ fun DeviceInfoScreen(
     val scrollState = rememberScrollState()
     val webView = remember { WebView(context) }
     val userAgent = remember { mutableStateOf(webView.settings.userAgentString) }
+    val defaultUserAgent = remember { mutableStateOf(WebSettings.getDefaultUserAgent(context)) }
     var showWebView by remember { mutableStateOf(false) }
 
     Box {
@@ -241,9 +318,19 @@ fun DeviceInfoScreen(
             }
             Text(fontWeight = FontWeight.Bold, text = "\n/* --- WEB VIEW --- */\n")
             Text("User Agent: ${userAgent.value}\n")
+            Text("Default User Agent: ${defaultUserAgent.value}\n")
             Button(onClick = { showWebView = true }) {
                 Text("OPEN WEB VIEW")
             }
+            Text("\nProxy detected? : ${if (proxyType == Proxy.Type.DIRECT) "No" else proxyType}\n")
+            Button(onClick = requestIp) {
+                Text("REQUEST IP")
+            }
+            Text("Ip info: ${ipInfo}\n")
+            Button(onClick = requestIpOkHttp) {
+                Text("REQUEST IP (OKHTTP)")
+            }
+            Text("Ip info OkHttp: ${ipInfoOkHttp}\n")
         }
 
         if (showWebView) {
@@ -274,6 +361,6 @@ fun getDnsServers(context: Context): String {
 @Composable
 fun DeviceInfoPreview() {
     NomixClonerAppTheme {
-        DeviceInfoScreen(LocalContext.current, "", {}, "", {}, "", {})
+        DeviceInfoScreen(LocalContext.current, "", {}, "", {}, "", {}, {}, "", {}, "", Proxy.Type.DIRECT)
     }
 }
