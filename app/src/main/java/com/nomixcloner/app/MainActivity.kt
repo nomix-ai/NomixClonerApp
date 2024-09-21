@@ -46,12 +46,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.net.Authenticator
 import java.net.HttpURLConnection
+import java.net.PasswordAuthentication
 import java.net.Proxy
 import java.net.ProxySelector
 import java.net.URI
 import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLSocketFactory
 
 
 private const val TAG = "MainActivity"
@@ -63,6 +67,7 @@ class MainActivity : ComponentActivity() {
     private var locationInfo: String by mutableStateOf("")
     private var ipInfo: String by mutableStateOf("")
     private var ipInfoOkHttp: String by mutableStateOf("")
+    private var ipInfoSSL: String by mutableStateOf("")
     private var proxyType: Proxy.Type by mutableStateOf(Proxy.Type.DIRECT)
     private lateinit var permissionsHelper: PermissionsHelper
 
@@ -94,6 +99,8 @@ class MainActivity : ComponentActivity() {
                             ipInfo,
                             ::requestIpInfoOkHttp,
                             ipInfoOkHttp,
+                            ::requestIpInfoSSLSocket,
+                            ipInfoSSL,
                             proxyType
                         )
                     }
@@ -233,6 +240,31 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun requestIpInfoSSLSocket() {
+        val authenticator: Authenticator = object : Authenticator() {
+            override fun getPasswordAuthentication(): PasswordAuthentication {
+                return PasswordAuthentication("admin", "admin1".toCharArray())
+            }
+        }
+        Authenticator.setDefault(authenticator)
+
+        GlobalScope.launch(Dispatchers.IO) {
+            val responseFactory1 = SSLSocketGetRequest.makeGetRequest(
+                "ipinfo.io",
+                443,
+                "/json",
+                SSLSocketFactory.getDefault()
+            )
+            val responseFactory2 = SSLSocketGetRequest.makeGetRequest(
+                "ipinfo.io",
+                443,
+                "/json",
+                HttpsURLConnection.getDefaultSSLSocketFactory()
+            )
+            ipInfoSSL = "$responseFactory1 \n\n $responseFactory2"
+        }
+    }
+
     private fun getProxyType() {
         val proxyList = ProxySelector.getDefault().select(URI.create("https://google.com"))
         proxyType = if (proxyList.isNotEmpty() && proxyList[0].type() != Proxy.Type.DIRECT) {
@@ -257,6 +289,8 @@ fun DeviceInfoScreen(
     ipInfo: String,
     requestIpOkHttp: () -> Unit,
     ipInfoOkHttp: String,
+    requestIpSSL: () -> Unit,
+    ipInfoSSL: String,
     proxyType: Proxy.Type
 ) {
     val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
@@ -331,6 +365,10 @@ fun DeviceInfoScreen(
                 Text("REQUEST IP (OKHTTP)")
             }
             Text("Ip info OkHttp: ${ipInfoOkHttp}\n")
+            Button(onClick = requestIpSSL) {
+                Text("REQUEST IP (SSL)")
+            }
+            Text("Ip info SSL: ${ipInfoSSL}\n")
         }
 
         if (showWebView) {
@@ -361,6 +399,21 @@ fun getDnsServers(context: Context): String {
 @Composable
 fun DeviceInfoPreview() {
     NomixClonerAppTheme {
-        DeviceInfoScreen(LocalContext.current, "", {}, "", {}, "", {}, {}, "", {}, "", Proxy.Type.DIRECT)
+        DeviceInfoScreen(
+            LocalContext.current,
+            "",
+            {},
+            "",
+            {},
+            "",
+            {},
+            {},
+            "",
+            {},
+            "",
+            {},
+            "",
+            Proxy.Type.DIRECT
+        )
     }
 }
