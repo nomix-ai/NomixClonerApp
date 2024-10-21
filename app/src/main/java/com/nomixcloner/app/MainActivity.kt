@@ -1,9 +1,13 @@
 package com.nomixcloner.app
 
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.ConnectivityManager
+import android.net.SSLCertificateSocketFactory
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -11,6 +15,7 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.RequiresApi
@@ -46,6 +51,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 import java.net.Authenticator
 import java.net.HttpURLConnection
 import java.net.PasswordAuthentication
@@ -53,10 +60,13 @@ import java.net.Proxy
 import java.net.ProxySelector
 import java.net.URI
 import java.net.URL
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.regex.Matcher
+import java.util.regex.Pattern
 import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocketFactory
-
 
 private const val TAG = "MainActivity"
 
@@ -64,12 +74,15 @@ class MainActivity : ComponentActivity() {
 
     private var googleAdId: String by mutableStateOf("")
     private var simInfo: String by mutableStateOf("")
+    private var appPackageName: String by mutableStateOf("")
+    private var appSignature: String by mutableStateOf("")
     private var locationInfo: String by mutableStateOf("")
     private var ipInfo: String by mutableStateOf("")
     private var ipInfoOkHttp: String by mutableStateOf("")
     private var ipInfoSSL: String by mutableStateOf("")
     private var proxyType: Proxy.Type by mutableStateOf(Proxy.Type.DIRECT)
     private lateinit var permissionsHelper: PermissionsHelper
+    private var hardwareData: String by mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,6 +90,15 @@ class MainActivity : ComponentActivity() {
         permissionsHelper = PermissionsHelper(this)
         getGoogleAdvertisingId(this)
         getProxyType()
+
+        appPackageName = applicationContext.packageName
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appPackageName += ", " + applicationContext.opPackageName
+        }
+        appSignature = getSignature()
+
+        simInfo = obtainSimInfo()
+        hardwareData = getAllBuildProperties()
 
         setContent {
             NomixClonerAppTheme {
@@ -90,8 +112,9 @@ class MainActivity : ComponentActivity() {
                         DeviceInfoScreen(
                             this,
                             googleAdId,
-                            ::requestSimInfo,
                             simInfo,
+                            appPackageName,
+                            appSignature,
                             ::requestLocationInfo,
                             locationInfo,
                             { permissionsHelper.requestMediaPermissions() },
@@ -101,7 +124,8 @@ class MainActivity : ComponentActivity() {
                             ipInfoOkHttp,
                             ::requestIpInfoSSLSocket,
                             ipInfoSSL,
-                            proxyType
+                            proxyType,
+                            hardwareData
                         )
                     }
                 }
@@ -115,13 +139,6 @@ class MainActivity : ComponentActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        if (requestCode == PermissionsHelper.READ_PHONE_STATE_PERMISSION_REQUEST_CODE && permissionsHelper.isGranted(
-                grantResults
-            )
-        ) {
-            requestSimInfo()
-        }
 
         if (requestCode == PermissionsHelper.LOCATION_PERMISSION_REQUEST_CODE && permissionsHelper.isGranted(
                 grantResults
@@ -143,19 +160,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestSimInfo() {
-        if (!permissionsHelper.isReadPhoneStatePermissionGranted()) {
-            permissionsHelper.requestReadPhoneStatePermission()
-        } else {
-            simInfo = try {
-                val telephonyManager =
-                    getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
-                "${telephonyManager.simOperatorName}, ${telephonyManager.simCountryIso}"
-            } catch (e: Exception) {
-                Log.e(TAG, "Error", e)
-                "Unknown"
-            }
+    private fun obtainSimInfo(): String {
+        val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+        var simInfo = telephonyManager.run {
+            "$simOperator, $simOperatorName, $simCountryIso, $networkOperator, $networkOperatorName, $networkCountryIso, $phoneType, ${hasCarrierPrivileges()}"
         }
+        if (permissionsHelper.isLocationPermissionGranted()) {
+            @SuppressLint("MissingPermission")
+            simInfo += ", ${telephonyManager.cellLocation}, ${telephonyManager.allCellInfo}"
+        }
+        return simInfo
     }
 
     private fun requestLocationInfo() {
@@ -197,6 +211,8 @@ class MainActivity : ComponentActivity() {
                     isLoading.set(false)
                     locationInfo = result.toString()
                 }
+
+                simInfo = obtainSimInfo()
             } catch (e: Exception) {
                 Log.e(TAG, "Error", e)
                 locationInfo = "Unknown"
@@ -261,7 +277,39 @@ class MainActivity : ComponentActivity() {
                 "/json",
                 HttpsURLConnection.getDefaultSSLSocketFactory()
             )
-            ipInfoSSL = "$responseFactory1 \n\n $responseFactory2"
+            val responseFactory3 = SSLSocketGetRequest.makeGetRequest(
+                "ipinfo.io",
+                443,
+                "/json",
+                SSLCertificateSocketFactory.getDefault()
+            )
+            val responseFactory4 = SSLSocketGetRequest.makeGetRequest(
+                "ipinfo.io",
+                443,
+                "/json",
+                SSLCertificateSocketFactory.getDefault(0)
+            )
+            val responseFactory5 = SSLSocketGetRequest.makeGetRequest(
+                "ipinfo.io",
+                443,
+                "/json",
+                SSLCertificateSocketFactory.getDefault(0, null)
+            )
+            val responseFactory6 = SSLSocketGetRequest.makeGetRequest(
+                "ipinfo.io",
+                443,
+                "/json",
+                SSLContext.getDefault().socketFactory
+            )
+            ipInfoSSL = """
+                |
+                |SSLSocketFactory: ${getCountry(responseFactory1)}
+                |HttpsURLConnection: ${getCountry(responseFactory2)}
+                |SSLCertificateSocketFactory1: ${getCountry(responseFactory3)}
+                |SSLCertificateSocketFactory2: ${getCountry(responseFactory4)}
+                |SSLCertificateSocketFactory3: ${getCountry(responseFactory5)}
+                |SSLContext: ${getCountry(responseFactory6)}
+                |""".trimMargin()
         }
     }
 
@@ -273,147 +321,261 @@ class MainActivity : ComponentActivity() {
             Proxy.Type.DIRECT
         }
     }
-}
 
-@SuppressLint("HardwareIds")
-@Composable
-fun DeviceInfoScreen(
-    context: Context,
-    googleAdId: String,
-    requestSimInfo: () -> Unit,
-    simInfo: String,
-    requestLocationInfo: () -> Unit,
-    locationInfo: String,
-    requestMediaPermissions: () -> Unit,
-    requestIp: () -> Unit,
-    ipInfo: String,
-    requestIpOkHttp: () -> Unit,
-    ipInfoOkHttp: String,
-    requestIpSSL: () -> Unit,
-    ipInfoSSL: String,
-    proxyType: Proxy.Type
-) {
-    val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-    val dnsServers = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        getDnsServers(context)
-    } else {
-        "Unknown"
+    private fun getCountry(input: String): String {
+        // Regular expression to match the country value
+        val pattern: Pattern = Pattern.compile("\"country\":\\s*\"(.*?)\"")
+        val matcher: Matcher = pattern.matcher(input)
+
+        // Check if the pattern matches
+        return "Country: " + if (matcher.find()) {
+            // Extract the value inside the quotes
+            val country = matcher.group(1)
+            country
+        } else {
+            "Unknown"
+        }
     }
-    val buildProps = """
-        ${Build.MODEL}
-        ${Build.MANUFACTURER}
-        ${Build.BRAND}
-        ${Build.PRODUCT}
-        ${Build.DEVICE}
-        ${Build.BOARD}
-        ${Build.HARDWARE}
-        ${Build.BOOTLOADER}
-        ${Build.FINGERPRINT}
-        ${Build.DISPLAY}
-        ${Build.ID}
-        ${Build.VERSION.SECURITY_PATCH}
-        ${Build.VERSION.RELEASE}
-        ${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Build.VERSION.RELEASE_OR_CODENAME else "Unknown"}
-        ${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Build.VERSION.RELEASE_OR_PREVIEW_DISPLAY else "Unknown"}
-        ${Build.VERSION.INCREMENTAL}
-        ${Build.VERSION.SDK_INT}
-    """
-    val osVersion = System.getProperty("os.version")
 
-    val scrollState = rememberScrollState()
-    val webView = remember { WebView(context) }
-    val userAgent = remember { mutableStateOf(webView.settings.userAgentString) }
-    val defaultUserAgent = remember { mutableStateOf(WebSettings.getDefaultUserAgent(context)) }
-    var showWebView by remember { mutableStateOf(false) }
+    private fun getSignature(): String {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val packageInfo = packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.GET_SIGNING_CERTIFICATES
+                )
+                val signingInfo = packageInfo.signingInfo
+                if (signingInfo != null) {
+                    val signatures = signingInfo.apkContentsSigners
+                    signatures.joinToString(" : ") { signature ->
+                        signature.toByteArray().toShortHash()
+                    }
+                } else {
+                    "No signatures found"
+                }
+            } else {
+                val packageInfo = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+                val signatures = packageInfo.signatures
+                signatures.joinToString(" : ") { signature ->
+                    signature.toByteArray().toShortHash()
+                }
+            }
+        } catch (e: PackageManager.NameNotFoundException) {
+            e.printStackTrace()
+            "Error getting signature"
+        }
+    }
 
-    Box {
-        Column(
-            modifier = Modifier
-                .verticalScroll(scrollState)
-                .padding(16.dp)
-        ) {
-            Text(fontWeight = FontWeight.Bold, text = "/* --- DEVICE IDENTITY --- */\n")
-            Text("Android ID: $androidId\n")
-            Text("DNS servers: $dnsServers\n")
-            Text("Build props: $buildProps")
-            Text("OS version: $osVersion\n")
-            Text("Google Advertising ID: $googleAdId\n")
-            Text(fontWeight = FontWeight.Bold, text = "/* --- PERMISSIONS --- */\n")
-            Button(onClick = requestSimInfo) {
-                Text("READ_PHONE_STATE")
-            }
-            Text("SIM info: $simInfo\n")
-            Button(onClick = requestLocationInfo) {
-                Text("LOCATION")
-            }
-            Text(locationInfo)
-            Button(onClick = requestMediaPermissions) {
-                Text("MEDIA")
-            }
-            Text(fontWeight = FontWeight.Bold, text = "\n/* --- WEB VIEW --- */\n")
-            Text("User Agent: ${userAgent.value}\n")
-            Text("Default User Agent: ${defaultUserAgent.value}\n")
-            Button(onClick = { showWebView = true }) {
-                Text("OPEN WEB VIEW")
-            }
-            Text("\nProxy detected? : ${if (proxyType == Proxy.Type.DIRECT) "No" else proxyType}\n")
-            Button(onClick = requestIp) {
-                Text("REQUEST IP")
-            }
-            Text("Ip info: ${ipInfo}\n")
-            Button(onClick = requestIpOkHttp) {
-                Text("REQUEST IP (OKHTTP)")
-            }
-            Text("Ip info OkHttp: ${ipInfoOkHttp}\n")
-            Button(onClick = requestIpSSL) {
-                Text("REQUEST IP (SSL)")
-            }
-            Text("Ip info SSL: ${ipInfoSSL}\n")
+    private fun ByteArray.toShortHash(): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        val digest = md.digest(this)
+        return digest.take(4).joinToString("") { "%02x".format(it) }
+    }
+
+    @SuppressLint("HardwareIds")
+    @Composable
+    fun DeviceInfoScreen(
+        context: Context,
+        googleAdId: String,
+        simInfo: String,
+        packageName: String,
+        signature: String,
+        requestLocationInfo: () -> Unit,
+        locationInfo: String,
+        requestMediaPermissions: () -> Unit,
+        requestIp: () -> Unit,
+        ipInfo: String,
+        requestIpOkHttp: () -> Unit,
+        ipInfoOkHttp: String,
+        requestIpSSL: () -> Unit,
+        ipInfoSSL: String,
+        proxyType: Proxy.Type,
+        hardwareData: String
+    ) {
+        val androidId =
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        val dnsServers = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            getDnsServers(context)
+        } else {
+            "Unknown"
         }
 
-        if (showWebView) {
-            WebViewScreen(
-                "https://www.whatismybrowser.com/detect/what-is-my-user-agent/",
-                showTopBar = true,
-                onClose = {
-                    showWebView = false
+        val scrollState = rememberScrollState()
+        val webView = remember { WebView(context) }
+        val userAgent = remember { mutableStateOf(webView.settings.userAgentString) }
+        val defaultUserAgent = remember { mutableStateOf(WebSettings.getDefaultUserAgent(context)) }
+        var showWebView by remember { mutableStateOf(false) }
+
+        Box {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(scrollState)
+                    .padding(16.dp)
+            ) {
+                Text(fontWeight = FontWeight.Bold, text = "/* --- DEVICE IDENTITY --- */\n")
+                Text("Android ID: $androidId\n")
+                Text("DNS servers: $dnsServers\n")
+                Button(onClick = { copyToClipboard(context, hardwareData) }) {
+                    Text("COPY JSON TO CLIPBOARD")
                 }
+                Text("\nHardware data: $hardwareData\n")
+                Text("Package name: $packageName\n")
+                Text("Signature: $signature\n")
+                Text("Google Advertising ID: $googleAdId\n")
+                Text("SIM info: $simInfo\n")
+                Text(fontWeight = FontWeight.Bold, text = "/* --- PERMISSIONS --- */\n")
+                Button(onClick = requestLocationInfo) {
+                    Text("LOCATION")
+                }
+                Text(locationInfo)
+                Button(onClick = requestMediaPermissions) {
+                    Text("MEDIA")
+                }
+                Text(fontWeight = FontWeight.Bold, text = "\n/* --- WEB VIEW --- */\n")
+                Text("User Agent: ${userAgent.value}\n")
+                Text("Default User Agent: ${defaultUserAgent.value}\n")
+                Button(onClick = { showWebView = true }) {
+                    Text("OPEN WEB VIEW")
+                }
+                Text("\nProxy detected? : ${if (proxyType == Proxy.Type.DIRECT) "No" else proxyType}\n")
+                Button(onClick = requestIp) {
+                    Text("REQUEST IP")
+                }
+                Text("Ip info: ${ipInfo}\n")
+                Button(onClick = requestIpOkHttp) {
+                    Text("REQUEST IP (OKHTTP)")
+                }
+                Text("Ip info OkHttp: ${ipInfoOkHttp}\n")
+                Button(onClick = requestIpSSL) {
+                    Text("REQUEST IP (SSL)")
+                }
+                Text("Ip info SSL: ${ipInfoSSL}\n")
+            }
+
+            if (showWebView) {
+                WebViewScreen(
+                    "https://www.whatismybrowser.com/detect/what-is-my-user-agent/",
+                    showTopBar = true,
+                    onClose = {
+                        showWebView = false
+                    }
+                )
+            }
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    fun getDnsServers(context: Context): String {
+        val connectivityManager =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val linkProperties =
+            connectivityManager.getLinkProperties(connectivityManager.activeNetwork)
+        return linkProperties
+            ?.dnsServers
+            ?.mapNotNull { it.hostAddress }
+            ?.joinToString(", ")
+            ?: "Unknown"
+    }
+
+    private fun getAllBuildProperties(): String {
+        val json = JSONObject()
+
+        // Helper function to handle arrays and other objects
+        fun addToJson(name: String, value: Any?) {
+            when (value) {
+                is Array<*> -> json.put(name, JSONArray(value.map { it?.toString() ?: "null" }))
+                is List<*> -> json.put(name, JSONArray(value.map { it?.toString() ?: "null" }))
+                else -> json.put(name, value?.toString() ?: "null")
+            }
+        }
+
+        // Reflect all fields in Build class
+        Build::class.java.declaredFields.forEach { field ->
+            field.isAccessible = true
+            val name = field.name.toLowerCase()
+            addToJson(name, field.get(null))
+        }
+
+        // Reflect all fields in Build.VERSION class
+        Build.VERSION::class.java.declaredFields.forEach { field ->
+            field.isAccessible = true
+            val name = "version_${field.name.toLowerCase()}"
+            addToJson(name, field.get(null))
+        }
+
+        // Add OS version
+        json.put("os_version", System.getProperty("os.version") ?: "Unknown")
+
+        // Add additional system properties
+        listOf(
+            "os.version",
+            "os.arch",
+            "os.name",
+            "java.vm.version",
+            "java.vm.name",
+            "java.vm.vendor",
+            "java.specification.version",
+            "java.specification.vendor",
+            "java.version",
+            "java.vendor",
+            "user.name",
+            "user.home",
+            "user.dir",
+            "file.separator",
+            "path.separator",
+            "line.separator",
+            "java.class.path",
+            "java.class.version",
+            "java.library.path",
+            "java.io.tmpdir",
+            "java.compiler",
+            "java.ext.dirs",
+            "sun.boot.library.path"
+        ).forEach { prop ->
+            json.put(prop.replace(".", "_").toLowerCase(), System.getProperty(prop) ?: "Unknown")
+        }
+
+        return json.toString(2)  // 2 spaces for indentation
+    }
+
+    private fun copyToClipboard(context: Context, text: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("Hardware Data", text)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(context, "JSON copied to clipboard", Toast.LENGTH_SHORT).show()
+
+        // Write compact JSON to log
+        try {
+            val jsonObject = JSONObject(text)
+            val compactJson = jsonObject.toString()
+            Log.d(TAG, compactJson)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing JSON", e)
+        }
+    }
+
+    @Preview(showBackground = true)
+    @Composable
+    fun DeviceInfoPreview() {
+        NomixClonerAppTheme {
+            DeviceInfoScreen(
+                LocalContext.current,
+                "",
+                "",
+                "",
+                "",
+                {},
+                "",
+                {},
+                {},
+                "",
+                {},
+                "",
+                {},
+                "",
+                Proxy.Type.DIRECT,
+                ""
             )
         }
-    }
-}
-
-@RequiresApi(Build.VERSION_CODES.Q)
-fun getDnsServers(context: Context): String {
-    val connectivityManager =
-        context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    val linkProperties = connectivityManager.getLinkProperties(connectivityManager.activeNetwork)
-    return linkProperties
-        ?.dnsServers
-        ?.mapNotNull { it.hostAddress }
-        ?.joinToString(", ")
-        ?: "Unknown"
-}
-
-@Preview(showBackground = true)
-@Composable
-fun DeviceInfoPreview() {
-    NomixClonerAppTheme {
-        DeviceInfoScreen(
-            LocalContext.current,
-            "",
-            {},
-            "",
-            {},
-            "",
-            {},
-            {},
-            "",
-            {},
-            "",
-            {},
-            "",
-            Proxy.Type.DIRECT
-        )
     }
 }
