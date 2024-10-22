@@ -10,6 +10,7 @@ import android.net.ConnectivityManager
 import android.net.SSLCertificateSocketFactory
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.telephony.TelephonyManager
 import android.util.Log
@@ -61,6 +62,9 @@ import java.net.ProxySelector
 import java.net.URI
 import java.net.URL
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.regex.Matcher
 import java.util.regex.Pattern
@@ -406,6 +410,14 @@ class MainActivity : ComponentActivity() {
         val defaultUserAgent = remember { mutableStateOf(WebSettings.getDefaultUserAgent(context)) }
         var showWebView by remember { mutableStateOf(false) }
 
+        // Calculate boot times
+        val currentTimeMillis = System.currentTimeMillis()
+        val elapsedRealtimeMillis = SystemClock.elapsedRealtime()
+        val elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+
+        val bootTimeElapsed = Date(currentTimeMillis - elapsedRealtimeMillis)
+        val bootTimeElapsedNanos = Date(currentTimeMillis - (elapsedRealtimeNanos / 1_000_000))
+
         Box {
             Column(
                 modifier = Modifier
@@ -419,6 +431,8 @@ class MainActivity : ComponentActivity() {
                     Text("COPY JSON TO CLIPBOARD")
                 }
                 Text("\nHardware data: $hardwareData\n")
+                Text("Boot time (elapsedRealtime): ${formatDate(bootTimeElapsed)}")
+                Text("Boot time (elapsedRealtimeNanos): ${formatDate(bootTimeElapsedNanos)}\n")
                 Text("Package name: $packageName\n")
                 Text("Signature: $signature\n")
                 Text("Google Advertising ID: $googleAdId\n")
@@ -564,6 +578,11 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Error parsing JSON", e)
         }
+    }
+
+    private fun formatDate(date: Date): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
+        return sdf.format(date)
     }
 
     @Preview(showBackground = true)
