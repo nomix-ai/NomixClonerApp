@@ -480,33 +480,45 @@ class MainActivity : ComponentActivity() {
     private fun getAllBuildProperties(): String {
         val json = JSONObject()
 
-        // Helper function to handle arrays and other objects
-        fun addToJson(name: String, value: Any?) {
-            when (value) {
-                is Array<*> -> json.put(name, JSONArray(value.map { it?.toString() ?: "null" }))
-                is List<*> -> json.put(name, JSONArray(value.map { it?.toString() ?: "null" }))
-                else -> json.put(name, value?.toString() ?: "null")
-            }
-        }
+        json.put("board", Build.BOARD)
+        json.put("bootloader", Build.BOOTLOADER)
+        json.put("brand", Build.BRAND)
+        json.put("cpu_abi", Build.CPU_ABI)
+        json.put("cpu_abi2", Build.CPU_ABI2)
+        json.put("device", Build.DEVICE)
+        json.put("display", Build.DISPLAY)
+        json.put("fingerprint", Build.FINGERPRINT)
+        json.put("hardware", Build.HARDWARE)
+        json.put("host", Build.HOST)
+        json.put("id", Build.ID)
+        json.put("manufacturer", Build.MANUFACTURER)
+        json.put("model", Build.MODEL)
+        json.put("odm_sku", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.ODM_SKU else Build.UNKNOWN)
+        json.put("product", Build.PRODUCT)
+        json.put("radio", Build.getRadioVersion())
+        json.put("serial", Build.SERIAL)
+        json.put("sku", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SKU else Build.UNKNOWN)
+        json.put("soc_manufacturer", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MANUFACTURER else Build.UNKNOWN)
+        json.put("soc_model", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MODEL else Build.UNKNOWN)
+        json.put("supported_32_bit_abis", JSONArray(Build.SUPPORTED_32_BIT_ABIS))
+        json.put("supported_64_bit_abis", JSONArray(Build.SUPPORTED_64_BIT_ABIS))
+        json.put("supported_abis", JSONArray(Build.SUPPORTED_ABIS))
+        json.put("tags", Build.TAGS)
+        json.put("time", Build.TIME)
+        json.put("type", Build.TYPE)
+        json.put("user", Build.USER)
+        json.put("version_base_os", Build.VERSION.BASE_OS)
+        json.put("version_codename", Build.VERSION.CODENAME)
+        json.put("version_incremental", Build.VERSION.INCREMENTAL)
+        json.put("version_media_performance_class", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.VERSION.MEDIA_PERFORMANCE_CLASS else Build.UNKNOWN)
+        json.put("version_preview_sdk_int", Build.VERSION.PREVIEW_SDK_INT)
+        json.put("version_release", Build.VERSION.RELEASE)
+        json.put("version_release_or_codename", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Build.VERSION.RELEASE_OR_CODENAME else Build.UNKNOWN)
+        json.put("version_release_or_preview_display", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Build.VERSION.RELEASE_OR_PREVIEW_DISPLAY else Build.UNKNOWN)
+        json.put("version_sdk", Build.VERSION.SDK)
+        json.put("version_sdk_int", Build.VERSION.SDK_INT)
+        json.put("version_security_patch", Build.VERSION.SECURITY_PATCH)
 
-        // Reflect all fields in Build class
-        Build::class.java.declaredFields.forEach { field ->
-            field.isAccessible = true
-            val name = field.name.toLowerCase()
-            addToJson(name, field.get(null))
-        }
-
-        // Reflect all fields in Build.VERSION class
-        Build.VERSION::class.java.declaredFields.forEach { field ->
-            field.isAccessible = true
-            val name = "version_${field.name.toLowerCase()}"
-            addToJson(name, field.get(null))
-        }
-
-        // Add OS version
-        json.put("os_version", System.getProperty("os.version") ?: "Unknown")
-
-        // Add additional system properties
         listOf(
             "os.version",
             "os.arch",
