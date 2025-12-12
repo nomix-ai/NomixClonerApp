@@ -1,15 +1,18 @@
 package com.nomixcloner.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import androidx.core.app.ActivityCompat
 
 class PermissionsHelper(
     private val activity: MainActivity
 ) {
 
-    fun isReadPhoneStatePermissionGranted(): Boolean = isGranted(Manifest.permission.READ_PHONE_STATE)
+    fun isReadPhoneStatePermissionGranted(): Boolean =
+        isGranted(Manifest.permission.READ_PHONE_STATE)
 
     fun requestReadPhoneStatePermission() {
         ActivityCompat.requestPermissions(
@@ -19,7 +22,22 @@ class PermissionsHelper(
         )
     }
 
-    fun isLocationPermissionGranted(): Boolean = isGranted(Manifest.permission.ACCESS_FINE_LOCATION) && isGranted(Manifest.permission.ACCESS_COARSE_LOCATION)
+    fun isDeveloperOptionsEnabled(): Boolean {
+        return Settings.Global.getInt(
+            activity.baseContext.contentResolver,
+            Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0
+        ) == 1
+    }
+
+    fun isAdbEnabled(): Boolean {
+        return Settings.Global.getInt(
+            activity.baseContext.contentResolver,
+            Settings.Global.ADB_ENABLED, 0
+        ) == 1
+    }
+
+    fun isLocationPermissionGranted(): Boolean =
+        isGranted(Manifest.permission.ACCESS_FINE_LOCATION) && isGranted(Manifest.permission.ACCESS_COARSE_LOCATION)
 
     fun requestLocationPermission() {
         ActivityCompat.requestPermissions(
@@ -66,7 +84,8 @@ class PermissionsHelper(
         }
     }
 
-    fun isGranted(grantResults: IntArray): Boolean = !grantResults.contains(PackageManager.PERMISSION_DENIED)
+    fun isGranted(grantResults: IntArray): Boolean =
+        !grantResults.contains(PackageManager.PERMISSION_DENIED)
 
     private fun isGranted(permission: String): Boolean {
         return ActivityCompat.checkSelfPermission(

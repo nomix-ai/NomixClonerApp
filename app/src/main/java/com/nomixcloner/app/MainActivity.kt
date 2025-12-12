@@ -46,6 +46,7 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.nomixcloner.app.ui.WebViewScreen
 import com.nomixcloner.app.ui.theme.NomixClonerAppTheme
+import com.scottyab.rootbeer.RootBeer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
@@ -88,53 +89,66 @@ class MainActivity : ComponentActivity() {
     private lateinit var permissionsHelper: PermissionsHelper
     private var hardwareData: String by mutableStateOf("")
 
+    private var isDeveloperOptionsEnabled by mutableStateOf(false)
+    private var isAdbEnabled by mutableStateOf(false)
+    private var isRootEnabled by mutableStateOf(false)
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+            permissionsHelper = PermissionsHelper(this)
+            val rootHelper = RootHelper(this)
+            getGoogleAdvertisingId(this)
+            getProxyType()
 
-        permissionsHelper = PermissionsHelper(this)
-        getGoogleAdvertisingId(this)
-        getProxyType()
+            appPackageName = applicationContext.packageName
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appPackageName += ", " + applicationContext.opPackageName
+            }
+            appSignature = getSignature()
 
-        appPackageName = applicationContext.packageName
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            appPackageName += ", " + applicationContext.opPackageName
-        }
-        appSignature = getSignature()
+            simInfo = obtainSimInfo()
+            hardwareData = getAllBuildProperties()
+            isDeveloperOptionsEnabled = permissionsHelper.isDeveloperOptionsEnabled()
+            isAdbEnabled = permissionsHelper.isAdbEnabled()
+            val rootBeer = RootBeer(baseContext)
+            isRootEnabled = rootHelper.isRooted()
 
-        simInfo = obtainSimInfo()
-        hardwareData = getAllBuildProperties()
+            setContent {
+                NomixClonerAppTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
 
-        setContent {
-            NomixClonerAppTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    if (BuildConfig.webViewMode) {
-                        WebViewScreen(url = "https://nomixcloner.com")
-                    } else {
-                        DeviceInfoScreen(
-                            this,
-                            googleAdId,
-                            simInfo,
-                            appPackageName,
-                            appSignature,
-                            ::requestLocationInfo,
-                            locationInfo,
-                            { permissionsHelper.requestMediaPermissions() },
-                            ::requestIpInfo,
-                            ipInfo,
-                            ::requestIpInfoOkHttp,
-                            ipInfoOkHttp,
-                            ::requestIpInfoSSLSocket,
-                            ipInfoSSL,
-                            proxyType,
-                            hardwareData
-                        )
+                        if (BuildConfig.webViewMode) {
+                            WebViewScreen(url = "https://nomixcloner.com")
+                        } else {
+                            DeviceInfoScreen(
+                                this,
+                                googleAdId,
+                                simInfo,
+                                appPackageName,
+                                appSignature,
+                                ::requestLocationInfo,
+                                locationInfo,
+                                { permissionsHelper.requestMediaPermissions() },
+                                ::requestIpInfo,
+                                ipInfo,
+                                ::requestIpInfoOkHttp,
+                                ipInfoOkHttp,
+                                ::requestIpInfoSSLSocket,
+                                ipInfoSSL,
+                                proxyType,
+                                hardwareData,
+                                isDeveloperOptionsEnabled,
+                                isAdbEnabled,
+                                isRootEnabled,
+                            )
+                        }
+                    }
                     }
                 }
-            }
-        }
     }
 
     override fun onRequestPermissionsResult(
@@ -358,7 +372,8 @@ class MainActivity : ComponentActivity() {
                     "No signatures found"
                 }
             } else {
-                val packageInfo = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+                val packageInfo =
+                    packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
                 val signatures = packageInfo.signatures
                 signatures.joinToString(" : ") { signature ->
                     signature.toByteArray().toShortHash()
@@ -394,7 +409,10 @@ class MainActivity : ComponentActivity() {
         requestIpSSL: () -> Unit,
         ipInfoSSL: String,
         proxyType: Proxy.Type,
-        hardwareData: String
+        hardwareData: String,
+        isDeveloperOptionsEnabled: Boolean,
+        isAdbEnabled: Boolean,
+        isRootEnabled: Boolean,
     ) {
         val androidId =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
@@ -431,6 +449,9 @@ class MainActivity : ComponentActivity() {
                     Text("COPY JSON TO CLIPBOARD")
                 }
                 Text("\nHardware data: $hardwareData\n")
+                Text("Developer options enabled: $isDeveloperOptionsEnabled\n")
+                Text("Adb option enabled: $isAdbEnabled\n")
+                Text("Root enabled: $isRootEnabled\n")
                 Text("Boot time (elapsedRealtime): ${formatDate(bootTimeElapsed)}")
                 Text("Boot time (elapsedRealtimeNanos): ${formatDate(bootTimeElapsedNanos)}\n")
                 Text("Package name: $packageName\n")
@@ -507,13 +528,25 @@ class MainActivity : ComponentActivity() {
         json.put("id", Build.ID)
         json.put("manufacturer", Build.MANUFACTURER)
         json.put("model", Build.MODEL)
-        json.put("odm_sku", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.ODM_SKU else Build.UNKNOWN)
+        json.put(
+            "odm_sku",
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.ODM_SKU else Build.UNKNOWN
+        )
         json.put("product", Build.PRODUCT)
         json.put("radio", Build.getRadioVersion())
         json.put("serial", Build.SERIAL)
-        json.put("sku", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SKU else Build.UNKNOWN)
-        json.put("soc_manufacturer", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MANUFACTURER else Build.UNKNOWN)
-        json.put("soc_model", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MODEL else Build.UNKNOWN)
+        json.put(
+            "sku",
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SKU else Build.UNKNOWN
+        )
+        json.put(
+            "soc_manufacturer",
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MANUFACTURER else Build.UNKNOWN
+        )
+        json.put(
+            "soc_model",
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MODEL else Build.UNKNOWN
+        )
         json.put("supported_32_bit_abis", JSONArray(Build.SUPPORTED_32_BIT_ABIS))
         json.put("supported_64_bit_abis", JSONArray(Build.SUPPORTED_64_BIT_ABIS))
         json.put("supported_abis", JSONArray(Build.SUPPORTED_ABIS))
@@ -524,11 +557,20 @@ class MainActivity : ComponentActivity() {
         json.put("version_base_os", Build.VERSION.BASE_OS)
         json.put("version_codename", Build.VERSION.CODENAME)
         json.put("version_incremental", Build.VERSION.INCREMENTAL)
-        json.put("version_media_performance_class", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.VERSION.MEDIA_PERFORMANCE_CLASS else Build.UNKNOWN)
+        json.put(
+            "version_media_performance_class",
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.VERSION.MEDIA_PERFORMANCE_CLASS else Build.UNKNOWN
+        )
         json.put("version_preview_sdk_int", Build.VERSION.PREVIEW_SDK_INT)
         json.put("version_release", Build.VERSION.RELEASE)
-        json.put("version_release_or_codename", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Build.VERSION.RELEASE_OR_CODENAME else Build.UNKNOWN)
-        json.put("version_release_or_preview_display", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Build.VERSION.RELEASE_OR_PREVIEW_DISPLAY else Build.UNKNOWN)
+        json.put(
+            "version_release_or_codename",
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Build.VERSION.RELEASE_OR_CODENAME else Build.UNKNOWN
+        )
+        json.put(
+            "version_release_or_preview_display",
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Build.VERSION.RELEASE_OR_PREVIEW_DISPLAY else Build.UNKNOWN
+        )
         json.put("version_sdk", Build.VERSION.SDK)
         json.put("version_sdk_int", Build.VERSION.SDK_INT)
         json.put("version_security_patch", Build.VERSION.SECURITY_PATCH)
@@ -558,7 +600,7 @@ class MainActivity : ComponentActivity() {
             "java.ext.dirs",
             "sun.boot.library.path"
         ).forEach { prop ->
-            json.put(prop.replace(".", "_").toLowerCase(), System.getProperty(prop) ?: "Unknown")
+            json.put(prop.replace(".", "_").lowercase(), System.getProperty(prop) ?: "Unknown")
         }
 
         return json.toString(2)  // 2 spaces for indentation
@@ -605,7 +647,10 @@ class MainActivity : ComponentActivity() {
                 {},
                 "",
                 Proxy.Type.DIRECT,
-                ""
+                "",
+                false,
+                true,
+                true
             )
         }
     }
