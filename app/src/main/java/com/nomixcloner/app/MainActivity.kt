@@ -46,7 +46,6 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.nomixcloner.app.ui.WebViewScreen
 import com.nomixcloner.app.ui.theme.NomixClonerAppTheme
-import com.scottyab.rootbeer.RootBeer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
@@ -94,7 +93,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
             permissionsHelper = PermissionsHelper(this)
-            val rootHelper = RootHelper(this)
             getGoogleAdvertisingId(this)
             getProxyType()
 
