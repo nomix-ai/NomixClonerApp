@@ -88,11 +88,8 @@ class MainActivity : ComponentActivity() {
     private var proxyType: Proxy.Type by mutableStateOf(Proxy.Type.DIRECT)
     private lateinit var permissionsHelper: PermissionsHelper
     private var hardwareData: String by mutableStateOf("")
-
     private var isDeveloperOptionsEnabled by mutableStateOf(false)
     private var isAdbEnabled by mutableStateOf(false)
-    private var isRootEnabled by mutableStateOf(false)
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -111,8 +108,6 @@ class MainActivity : ComponentActivity() {
             hardwareData = getAllBuildProperties()
             isDeveloperOptionsEnabled = permissionsHelper.isDeveloperOptionsEnabled()
             isAdbEnabled = permissionsHelper.isAdbEnabled()
-            val rootBeer = RootBeer(baseContext)
-            isRootEnabled = rootHelper.isRooted()
 
             setContent {
                 NomixClonerAppTheme {
@@ -143,7 +138,6 @@ class MainActivity : ComponentActivity() {
                                 hardwareData,
                                 isDeveloperOptionsEnabled,
                                 isAdbEnabled,
-                                isRootEnabled,
                             )
                         }
                     }
@@ -412,7 +406,6 @@ class MainActivity : ComponentActivity() {
         hardwareData: String,
         isDeveloperOptionsEnabled: Boolean,
         isAdbEnabled: Boolean,
-        isRootEnabled: Boolean,
     ) {
         val androidId =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
@@ -451,7 +444,6 @@ class MainActivity : ComponentActivity() {
                 Text("\nHardware data: $hardwareData\n")
                 Text("Developer options enabled: $isDeveloperOptionsEnabled\n")
                 Text("Adb option enabled: $isAdbEnabled\n")
-                Text("Root enabled: $isRootEnabled\n")
                 Text("Boot time (elapsedRealtime): ${formatDate(bootTimeElapsed)}")
                 Text("Boot time (elapsedRealtimeNanos): ${formatDate(bootTimeElapsedNanos)}\n")
                 Text("Package name: $packageName\n")
@@ -650,7 +642,6 @@ class MainActivity : ComponentActivity() {
                 "",
                 false,
                 true,
-                true
             )
         }
     }
