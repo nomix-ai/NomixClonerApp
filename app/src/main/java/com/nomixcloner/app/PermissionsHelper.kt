@@ -94,9 +94,28 @@ class PermissionsHelper(
         ) == PackageManager.PERMISSION_GRANTED
     }
 
+    fun isNotificationPermissionGranted(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            isGranted(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            true
+        }
+    }
+
+    fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                NOTIFICATION_PERMISSION_REQUEST_CODE
+            )
+        }
+    }
+
     companion object {
         const val READ_PHONE_STATE_PERMISSION_REQUEST_CODE = 1
         const val LOCATION_PERMISSION_REQUEST_CODE = 2
         const val MEDIA_PERMISSION_REQUEST_CODE = 3
+        const val NOTIFICATION_PERMISSION_REQUEST_CODE = 4
     }
 }
