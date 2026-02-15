@@ -1,6 +1,9 @@
 package com.nomixcloner.app
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -17,6 +20,9 @@ import android.util.Log
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.widget.Toast
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.RequiresApi
@@ -92,55 +98,56 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-            permissionsHelper = PermissionsHelper(this)
-            getGoogleAdvertisingId(this)
-            getProxyType()
+        permissionsHelper = PermissionsHelper(this)
+        getGoogleAdvertisingId(this)
+        getProxyType()
 
-            appPackageName = applicationContext.packageName
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                appPackageName += ", " + applicationContext.opPackageName
-            }
-            appSignature = getSignature()
+        appPackageName = applicationContext.packageName
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appPackageName += ", " + applicationContext.opPackageName
+        }
+        appSignature = getSignature()
 
-            simInfo = obtainSimInfo()
-            hardwareData = getAllBuildProperties()
-            isDeveloperOptionsEnabled = permissionsHelper.isDeveloperOptionsEnabled()
-            isAdbEnabled = permissionsHelper.isAdbEnabled()
+        simInfo = obtainSimInfo()
+        hardwareData = getAllBuildProperties()
+        isDeveloperOptionsEnabled = permissionsHelper.isDeveloperOptionsEnabled()
+        isAdbEnabled = permissionsHelper.isAdbEnabled()
 
-            setContent {
-                NomixClonerAppTheme {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background
-                    ) {
+        setContent {
+            NomixClonerAppTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
 
-                        if (BuildConfig.webViewMode) {
-                            WebViewScreen(url = "https://nomixcloner.com")
-                        } else {
-                            DeviceInfoScreen(
-                                this,
-                                googleAdId,
-                                simInfo,
-                                appPackageName,
-                                appSignature,
-                                ::requestLocationInfo,
-                                locationInfo,
-                                { permissionsHelper.requestMediaPermissions() },
-                                ::requestIpInfo,
-                                ipInfo,
-                                ::requestIpInfoOkHttp,
-                                ipInfoOkHttp,
-                                ::requestIpInfoSSLSocket,
-                                ipInfoSSL,
-                                proxyType,
-                                hardwareData,
-                                isDeveloperOptionsEnabled,
-                                isAdbEnabled,
-                            )
-                        }
-                    }
+                    if (BuildConfig.webViewMode) {
+                        WebViewScreen(url = "https://nomixcloner.com")
+                    } else {
+                        DeviceInfoScreen(
+                            this,
+                            googleAdId,
+                            simInfo,
+                            appPackageName,
+                            appSignature,
+                            ::requestLocationInfo,
+                            locationInfo,
+                            { permissionsHelper.requestMediaPermissions() },
+                            ::requestIpInfo,
+                            ipInfo,
+                            ::requestIpInfoOkHttp,
+                            ipInfoOkHttp,
+                            ::requestIpInfoSSLSocket,
+                            ipInfoSSL,
+                            proxyType,
+                            hardwareData,
+                            isDeveloperOptionsEnabled,
+                            isAdbEnabled,
+                            ::requestNotificationPermissionAndShow,
+                        )
                     }
                 }
+            }
+        }
     }
 
     override fun onRequestPermissionsResult(
@@ -155,6 +162,12 @@ class MainActivity : ComponentActivity() {
             )
         ) {
             requestLocationInfo()
+        }
+
+        if (requestCode == PermissionsHelper.NOTIFICATION_PERMISSION_REQUEST_CODE
+            && permissionsHelper.isGranted(grantResults)
+        ) {
+            showNotification()
         }
     }
 
@@ -404,6 +417,7 @@ class MainActivity : ComponentActivity() {
         hardwareData: String,
         isDeveloperOptionsEnabled: Boolean,
         isAdbEnabled: Boolean,
+        requestNotificationPermissionAndShow: () -> Unit,
     ) {
         val androidId =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
@@ -456,6 +470,9 @@ class MainActivity : ComponentActivity() {
                 Button(onClick = requestMediaPermissions) {
                     Text("MEDIA")
                 }
+                Button(onClick = requestNotificationPermissionAndShow) {
+                    Text("Get Notification")
+                }
                 Text(fontWeight = FontWeight.Bold, text = "\n/* --- WEB VIEW --- */\n")
                 Text("User Agent: ${userAgent.value}\n")
                 Text("Default User Agent: ${defaultUserAgent.value}\n")
@@ -505,65 +522,106 @@ class MainActivity : ComponentActivity() {
     private fun getAllBuildProperties(): String {
         val json = JSONObject()
 
+
+
         json.put("board", Build.BOARD)
         json.put("bootloader", Build.BOOTLOADER)
         json.put("brand", Build.BRAND)
+        json.put("brand_for_attestation", Build.BRAND)
         json.put("cpu_abi", Build.CPU_ABI)
         json.put("cpu_abi2", Build.CPU_ABI2)
         json.put("device", Build.DEVICE)
+        json.put("device_for_attestation", Build.DEVICE)
         json.put("display", Build.DISPLAY)
         json.put("fingerprint", Build.FINGERPRINT)
         json.put("hardware", Build.HARDWARE)
         json.put("host", Build.HOST)
+        json.put("hw_timeout_multiplier", getBuildField("HW_TIMEOUT_MULTIPLIER", "1"))
         json.put("id", Build.ID)
+        json.put("is_arc", getBuildField("IS_ARC", "false"))
+        json.put("is_debuggable", getBuildField("IS_DEBUGGABLE", "false"))
+        json.put("is_emulator", getBuildField("IS_EMULATOR", "false"))
+        json.put("is_eng", getBuildField("IS_ENG", "false"))
+        json.put("is_treble_enabled", getBuildField("IS_TREBLE_ENABLED", "true"))
+        json.put("is_user", getBuildField("IS_USER", "true"))
+        json.put("is_userdebug", getBuildField("IS_USERDEBUG", "false"))
         json.put("manufacturer", Build.MANUFACTURER)
+        json.put("manufacturer_for_attestation", Build.MANUFACTURER)
         json.put("model", Build.MODEL)
+        json.put("model_for_attestation", Build.MODEL)
         json.put(
             "odm_sku",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.ODM_SKU else Build.UNKNOWN
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.ODM_SKU else "unknown"
+        )
+        json.put(
+            "permissions_review_required",
+            getBuildField("PERMISSIONS_REVIEW_REQUIRED", "true")
         )
         json.put("product", Build.PRODUCT)
-        json.put("radio", Build.getRadioVersion())
+        json.put("product_for_attestation", Build.PRODUCT)
+        json.put("radio", Build.getRadioVersion() ?: "unknown")
         json.put("serial", Build.SERIAL)
         json.put(
             "sku",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SKU else Build.UNKNOWN
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SKU else "unknown"
         )
         json.put(
             "soc_manufacturer",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MANUFACTURER else Build.UNKNOWN
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MANUFACTURER else "unknown"
         )
         json.put(
             "soc_model",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MODEL else Build.UNKNOWN
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MODEL else "unknown"
         )
-        json.put("supported_32_bit_abis", JSONArray(Build.SUPPORTED_32_BIT_ABIS))
-        json.put("supported_64_bit_abis", JSONArray(Build.SUPPORTED_64_BIT_ABIS))
-        json.put("supported_abis", JSONArray(Build.SUPPORTED_ABIS))
+        json.put("supported_32_bit_abis", JSONArray(Build.SUPPORTED_32_BIT_ABIS.toList()))
+        json.put("supported_64_bit_abis", JSONArray(Build.SUPPORTED_64_BIT_ABIS.toList()))
+        json.put("supported_abis", JSONArray(Build.SUPPORTED_ABIS.toList()))
+        json.put("tag", getBuildField("TAG", "Build"))
         json.put("tags", Build.TAGS)
-        json.put("time", Build.TIME)
+        json.put("time", Build.TIME.toString())
         json.put("type", Build.TYPE)
+        json.put("unknown", "unknown")
         json.put("user", Build.USER)
+        json.put("version_active_codenames", getVersionArrayField("ACTIVE_CODENAMES"))
+        json.put("version_all_codenames", getVersionArrayField("ALL_CODENAMES"))
         json.put("version_base_os", Build.VERSION.BASE_OS)
         json.put("version_codename", Build.VERSION.CODENAME)
+        json.put(
+            "version_device_initial_sdk_int",
+            getVersionField("DEVICE_INITIAL_SDK_INT", Build.VERSION.SDK_INT.toString())
+        )
         json.put("version_incremental", Build.VERSION.INCREMENTAL)
+        json.put("version_known_codenames", getVersionField("KNOWN_CODENAMES", "{}"))
         json.put(
             "version_media_performance_class",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.VERSION.MEDIA_PERFORMANCE_CLASS else Build.UNKNOWN
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.VERSION.MEDIA_PERFORMANCE_CLASS.toString() else "0"
         )
-        json.put("version_preview_sdk_int", Build.VERSION.PREVIEW_SDK_INT)
+        json.put(
+            "version_min_supported_target_sdk_int",
+            getVersionField("MIN_SUPPORTED_TARGET_SDK_INT", "28")
+        )
+        json.put("version_preview_sdk_fingerprint", getVersionField("PREVIEW_SDK_FINGERPRINT", Build.VERSION.CODENAME))
+        json.put("version_preview_sdk_int", Build.VERSION.PREVIEW_SDK_INT.toString())
         json.put("version_release", Build.VERSION.RELEASE)
         json.put(
             "version_release_or_codename",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Build.VERSION.RELEASE_OR_CODENAME else Build.UNKNOWN
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Build.VERSION.RELEASE_OR_CODENAME else Build.VERSION.RELEASE
         )
         json.put(
             "version_release_or_preview_display",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Build.VERSION.RELEASE_OR_PREVIEW_DISPLAY else Build.UNKNOWN
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Build.VERSION.RELEASE_OR_PREVIEW_DISPLAY else Build.VERSION.RELEASE
+        )
+        json.put(
+            "version_resources_sdk_int",
+            getVersionField("RESOURCES_SDK_INT", Build.VERSION.SDK_INT.toString())
         )
         json.put("version_sdk", Build.VERSION.SDK)
-        json.put("version_sdk_int", Build.VERSION.SDK_INT)
+        json.put("version_sdk_int", Build.VERSION.SDK_INT.toString())
         json.put("version_security_patch", Build.VERSION.SECURITY_PATCH)
+        json.put("version_security_index", getVersionField("SECURITY_INDEX", "unknown"))
+        json.put("version_sem_first_sdk_int", getVersionField("SEM_FIRST_SDK_INT", "unknown"))
+        json.put("version_sem_int", getVersionField("SEM_INT", "unknown"))
+        json.put("version_sem_platform_int", getVersionField("SEM_PLATFORM_INT", "unknown"))
 
         listOf(
             "os.version",
@@ -617,6 +675,51 @@ class MainActivity : ComponentActivity() {
         return sdf.format(date)
     }
 
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channelId = "nomixcloner_notification_channel"
+            val channelName = "NomixCloner Notifications"
+            val channelDescription = "Notifications for NomixCloner app"
+            val importance = NotificationManager.IMPORTANCE_DEFAULT
+            val channel = NotificationChannel(channelId, channelName, importance).apply {
+                description = channelDescription
+            }
+            val notificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun requestNotificationPermissionAndShow() {
+        createNotificationChannel()
+        if (!permissionsHelper.isNotificationPermissionGranted()) {
+            permissionsHelper.requestNotificationPermission()
+        } else {
+            showNotification()
+        }
+    }
+
+    private fun showNotification() {
+        val channelId = "nomixcloner_notification_channel"
+        val notificationId = 1
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("NomixCloner Notification")
+            .setContentText("Это локальное уведомление от NomixCloner")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+
+        val notificationManager = NotificationManagerCompat.from(this)
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+        ) {
+            notificationManager.notify(notificationId, notification)
+        }
+    }
+
     @Preview(showBackground = true)
     @Composable
     fun DeviceInfoPreview() {
@@ -640,6 +743,7 @@ class MainActivity : ComponentActivity() {
                 "",
                 false,
                 true,
+                {},
             )
         }
     }
