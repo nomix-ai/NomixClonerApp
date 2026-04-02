@@ -1,6 +1,5 @@
 package com.nomixcloner.app
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,6 +8,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.LocationManager
+import android.media.MediaDrm
 import android.net.ConnectivityManager
 import android.net.SSLCertificateSocketFactory
 import android.os.Build
@@ -20,9 +20,6 @@ import android.util.Log
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.widget.Toast
-import androidx.core.app.ActivityCompat
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.RequiresApi
@@ -46,6 +43,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.ads.identifier.AdvertisingIdClient
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -69,8 +69,10 @@ import java.net.URI
 import java.net.URL
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
+import java.util.Arrays
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.regex.Matcher
 import java.util.regex.Pattern
@@ -95,6 +97,7 @@ class MainActivity : ComponentActivity() {
     private var hardwareData: String by mutableStateOf("")
     private var isDeveloperOptionsEnabled by mutableStateOf(false)
     private var isAdbEnabled by mutableStateOf(false)
+    val WIDEVINE_UUID: UUID = UUID.fromString("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -142,7 +145,9 @@ class MainActivity : ComponentActivity() {
                             hardwareData,
                             isDeveloperOptionsEnabled,
                             isAdbEnabled,
+                            getDrmId(),
                             ::requestNotificationPermissionAndShow,
+
                         )
                     }
                 }
@@ -417,10 +422,12 @@ class MainActivity : ComponentActivity() {
         hardwareData: String,
         isDeveloperOptionsEnabled: Boolean,
         isAdbEnabled: Boolean,
+        drmId: ByteArray,
         requestNotificationPermissionAndShow: () -> Unit,
     ) {
         val androidId =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        val deviceModel = Build.MANUFACTURER + " " + Build.MODEL;
         val dnsServers = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             getDnsServers(context)
         } else {
@@ -447,8 +454,10 @@ class MainActivity : ComponentActivity() {
                     .verticalScroll(scrollState)
                     .padding(16.dp)
             ) {
+                Text("deviceModel $deviceModel")
                 Text(fontWeight = FontWeight.Bold, text = "/* --- DEVICE IDENTITY --- */\n")
                 Text("Android ID: $androidId\n")
+                Text("DrmMedia ID: ${drmId.contentToString()}\n")
                 Text("DNS servers: $dnsServers\n")
                 Button(onClick = { copyToClipboard(context, hardwareData) }) {
                     Text("COPY JSON TO CLIPBOARD")
@@ -600,7 +609,10 @@ class MainActivity : ComponentActivity() {
             "version_min_supported_target_sdk_int",
             getVersionField("MIN_SUPPORTED_TARGET_SDK_INT", "28")
         )
-        json.put("version_preview_sdk_fingerprint", getVersionField("PREVIEW_SDK_FINGERPRINT", Build.VERSION.CODENAME))
+        json.put(
+            "version_preview_sdk_fingerprint",
+            getVersionField("PREVIEW_SDK_FINGERPRINT", Build.VERSION.CODENAME)
+        )
         json.put("version_preview_sdk_int", Build.VERSION.PREVIEW_SDK_INT.toString())
         json.put("version_release", Build.VERSION.RELEASE)
         json.put(
@@ -652,6 +664,16 @@ class MainActivity : ComponentActivity() {
         }
 
         return json.toString(2)  // 2 spaces for indentation
+    }
+
+    private fun getDrmId(): ByteArray {
+        try {
+            val mediaDrm = MediaDrm(WIDEVINE_UUID);
+            val raw = mediaDrm.getPropertyByteArray(MediaDrm.PROPERTY_DEVICE_UNIQUE_ID);
+            return raw
+        } catch (ignored: Throwable) {
+            return byteArrayOf();
+        }
     }
 
     private fun copyToClipboard(context: Context, text: String) {
@@ -743,6 +765,7 @@ class MainActivity : ComponentActivity() {
                 "",
                 false,
                 true,
+                byteArrayOf(),
                 {},
             )
         }
