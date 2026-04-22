@@ -35,7 +35,7 @@ You will see that instead of real device identifiers the clone shows generated d
 - WiFi SSID
 - WiFi BSSID
 - WiFi MAC address
-- SOCKS5 proxy for IP changing (optional)
+- SOCKS5 proxy for IP changing (optionally)
 - GPS location
 - GMS location (Google Play Services)
 - Native location (Android LocationManager)
