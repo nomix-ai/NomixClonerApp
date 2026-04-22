@@ -20,6 +20,7 @@ You will see that instead of real device identifiers the clone shows generated d
 - Global settings (adb_enabled, always_finish_activities, development_settings_enabled, ro.secure, ro.adb.secure, ro.boot.flash.locked, ro.debuggable, ro.kernel.qemu, ro.kernel.android.qemud)
 - System boot time
 - DNS servers
+- Media DRM
 - Google Advertising ID
 - SIM operator code
 - SIM operator name
